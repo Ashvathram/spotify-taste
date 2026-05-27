@@ -1,18 +1,3 @@
-"""
-enrich_data.py — Enrich track data with real tags from Last.fm API.
-
-Last.fm is free, open, and has no quota restrictions like Spotify.
-This script looks up each track by artist + title, pulls real genre/mood tags,
-then re-seeds the synthetic audio features with much more accurate values.
-
-Setup:
-  1. Get a free Last.fm API key at https://www.last.fm/api/account/create
-  2. Add to your .env:  LASTFM_API_KEY=your_key_here
-  3. Run:  python enrich_data.py
-  4. Then re-run:  python preprocess.py && python analysis.py
-
-This does NOT require re-running fetch_data.py.
-"""
 
 import os
 import time
@@ -25,12 +10,12 @@ from dotenv import load_dotenv
 
 DATA_DIR = "data"
 RAW_CSV = os.path.join(DATA_DIR, "raw_tracks.csv")
-ENRICHED_CSV = os.path.join(DATA_DIR, "raw_tracks.csv")  # overwrite in place
-CACHE_CSV = os.path.join(DATA_DIR, "lastfm_cache.csv")   # avoid re-fetching
+ENRICHED_CSV = os.path.join(DATA_DIR, "raw_tracks.csv") 
+CACHE_CSV = os.path.join(DATA_DIR, "lastfm_cache.csv")  
 SYNTHETIC_FLAG = os.path.join(DATA_DIR, ".synthetic_features")
 
 LASTFM_API = "https://ws.audioscrobbler.com/2.0/"
-REQUEST_DELAY = 0.25  # seconds between requests (Last.fm allows ~5/sec)
+REQUEST_DELAY = 0.25 
 
 
 def _log(msg: str):
@@ -38,12 +23,7 @@ def _log(msg: str):
     print(f"[{ts}] {msg}")
 
 
-# ---------------------------------------------------------------------------
-# Tag → audio feature mapping
-# ---------------------------------------------------------------------------
 
-# These map Last.fm tags (lowercased) to audio feature adjustments.
-# Values are applied as overrides to the base genre seed.
 TAG_FEATURE_MAP = {
     # Energy modifiers
     "energetic":      dict(energy=+0.20),
