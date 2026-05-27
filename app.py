@@ -148,38 +148,50 @@ def load_elbow() -> dict | None:
 # ── Chart helpers ──────────────────────────────────────────────────────────────
 
 def make_scatter(df: pd.DataFrame, use_umap: bool = True) -> go.Figure:
-    """UMAP or PCA scatter colored by persona."""
+    """UMAP or PCA scatter colored by persona, with clean custom hover tooltips."""
     x_col = "umap_x" if (use_umap and "umap_x" in df.columns) else "pca_x"
     y_col = "umap_y" if (use_umap and "umap_y" in df.columns) else "pca_y"
     method = "UMAP" if x_col == "umap_x" else "PCA"
 
-    fig = px.scatter(
-        df,
-        x=x_col,
-        y=y_col,
-        color="persona",
-        color_discrete_map=PERSONA_COLORS,
-        hover_data={
-            "track_name": True,
-            "artist_name": True,
-            "persona": True,
-            "valence": ":.2f",
-            "energy": ":.2f",
-            x_col: False,
-            y_col: False,
-        },
-        labels={"persona": "Persona"},
-        title=f"Taste Space ({method} projection)",
-        template=PLOTLY_TEMPLATE,
-    )
-    fig.update_traces(marker=dict(size=8, opacity=0.85, line=dict(width=0.5, color="#000")))
+    fig = go.Figure()
+
+    for persona, group in df.groupby("persona"):
+        color = PERSONA_COLORS.get(persona, "#888")
+        emoji = group["persona_emoji"].iloc[0] if "persona_emoji" in group.columns else ""
+        fig.add_trace(go.Scatter(
+            x=group[x_col],
+            y=group[y_col],
+            mode="markers",
+            name=f"{emoji} {persona}",
+            marker=dict(
+                size=11,
+                color=color,
+                opacity=0.88,
+                line=dict(width=1, color="rgba(0,0,0,0.4)"),
+            ),
+            customdata=group[["track_name", "artist_name", "valence", "energy", "persona"]].values,
+            hovertemplate=(
+                "<b>%{customdata[0]}</b><br>"
+                "%{customdata[1]}<br>"
+                "<span style='color:#aaa'>────────────</span><br>"
+                "Persona: %{customdata[4]}<br>"
+                "Valence: %{customdata[2]:.2f}  ·  Energy: %{customdata[3]:.2f}"
+                "<extra></extra>"
+            ),
+        ))
+
     fig.update_layout(
+        title=f"Taste Space ({method} projection)",
         paper_bgcolor=BG_COLOR,
         plot_bgcolor="#111",
         xaxis=dict(showgrid=False, zeroline=False, showticklabels=False, title=""),
         yaxis=dict(showgrid=False, zeroline=False, showticklabels=False, title=""),
-        legend=dict(bgcolor="#1A1A1A", bordercolor="#2A2A2A", borderwidth=1),
-        height=520,
+        legend=dict(
+            bgcolor="#1A1A1A", bordercolor="#2A2A2A", borderwidth=1,
+            title="Persona", font=dict(size=12),
+        ),
+        height=560,
+        hoverlabel=dict(bgcolor="#1A1A1A", bordercolor="#2A2A2A", font_size=13),
     )
     return fig
 
@@ -236,90 +248,142 @@ def make_radar(df: pd.DataFrame) -> go.Figure:
 
 
 def make_genre_bar(df: pd.DataFrame, top_n: int = 15) -> go.Figure:
-    """Horizontal bar chart of top N genres."""
+    """
+    Horizontal bar chart of top N genres.
+    If all genres are Unknown (Spotify 403 fallback), shows top artists instead.
+    """
     all_genres = []
     for g in df["genres"].dropna():
-        if g == "Unknown":
-            continue
-        all_genres.extend([x.strip() for x in g.split(",")])
+        if g != "Unknown":
+            all_genres.extend([x.strip() for x in g.split(",")])
 
-    if not all_genres:
-        return go.Figure().update_layout(title="No genre data", template=PLOTLY_TEMPLATE)
-
-    genre_counts = pd.Series(all_genres).value_counts().head(top_n)
+    if all_genres:
+        counts = pd.Series(all_genres).value_counts().head(top_n)
+        title = f"Top {top_n} Genres"
+        x_title = "Track count"
+        color_scale = [[0, "#1a3d2b"], [1, "#1DB954"]]
+    else:
+        # Fall back to top artists — always available
+        counts = df["artist_name"].value_counts().head(top_n)
+        title = f"Top {top_n} Artists"
+        x_title = "Times in your top tracks"
+        color_scale = [[0, "#1a1a3d"], [1, "#7B68EE"]]
 
     fig = go.Figure(go.Bar(
-        x=genre_counts.values,
-        y=genre_counts.index,
+        x=counts.values,
+        y=counts.index,
         orientation="h",
         marker=dict(
-            color=genre_counts.values,
-            colorscale=[[0, "#2A2A2A"], [1, "#1DB954"]],
+            color=list(range(len(counts))),
+            colorscale=color_scale,
             showscale=False,
+            line=dict(width=0),
         ),
-        text=genre_counts.values,
+        text=counts.values,
         textposition="outside",
+        textfont=dict(color="#aaa", size=11),
+        hovertemplate="<b>%{y}</b><br>" + x_title + ": %{x}<extra></extra>",
     ))
     fig.update_layout(
-        title=f"Top {top_n} Genres",
-        xaxis_title="Track count",
-        yaxis=dict(autorange="reversed"),
+        title=title,
+        xaxis_title=x_title,
+        yaxis=dict(autorange="reversed", tickfont=dict(size=11)),
         template=PLOTLY_TEMPLATE,
         paper_bgcolor=BG_COLOR,
         plot_bgcolor="#111",
-        height=480,
-        margin=dict(l=160),
+        height=500,
+        margin=dict(l=140, r=50),
+        xaxis=dict(showgrid=True, gridcolor="#1A1A1A"),
     )
     return fig
 
 
 def make_valence_timeline(df: pd.DataFrame) -> go.Figure:
-    """Valence over time from recently_played tracks."""
+    """
+    Mood (valence) chart.
+    - If recently_played tracks have timestamps: real time axis
+    - Otherwise: valence distribution by persona as a violin/strip chart (always useful)
+    """
     recent = df[df["time_range"] == "recently_played"].copy()
-    recent = recent.dropna(subset=["added_at", "valence"])
-    recent = recent.sort_values("added_at")
+    recent_with_time = recent.dropna(subset=["added_at", "valence"])
 
-    if recent.empty:
+    if not recent_with_time.empty:
+        # ── Real timeline mode ──
+        recent_with_time = recent_with_time.sort_values("added_at")
+        recent_with_time["valence_smooth"] = recent_with_time["valence"].rolling(5, min_periods=1).mean()
+
         fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=recent_with_time["added_at"],
+            y=recent_with_time["valence"],
+            mode="markers",
+            marker=dict(size=7, color="#444", opacity=0.6),
+            name="Track valence",
+            customdata=recent_with_time[["track_name", "artist_name"]].values,
+            hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]}<br>Valence: %{y:.2f}<extra></extra>",
+        ))
+        fig.add_trace(go.Scatter(
+            x=recent_with_time["added_at"],
+            y=recent_with_time["valence_smooth"],
+            mode="lines",
+            line=dict(color="#FFD700", width=2.5),
+            name="5-track rolling avg",
+        ))
+        fig.add_hline(y=0.5, line_dash="dot", line_color="#333",
+                      annotation_text="Neutral", annotation_font_color="#555")
         fig.update_layout(
-            title="Valence Over Time (no recently_played data)",
-            template=PLOTLY_TEMPLATE,
-            paper_bgcolor=BG_COLOR,
+            title="Mood Over Time (recently played)",
+            xaxis_title="Played at",
+            yaxis_title="Valence",
+            yaxis=dict(range=[0, 1]),
+            height=360,
         )
-        return fig
+    else:
+        # ── Fallback: valence by persona box plot ──
+        # Sort personas by median valence for a clean visual
+        persona_order = (
+            df.groupby("persona")["valence"]
+            .median()
+            .sort_values()
+            .index.tolist()
+        )
+        colors = [PERSONA_COLORS.get(p, "#888") for p in persona_order]
 
-    # 5-track rolling average for a smoother line
-    recent["valence_smooth"] = recent["valence"].rolling(5, min_periods=1).mean()
+        fig = go.Figure()
+        for persona, color in zip(persona_order, colors):
+            subset = df[df["persona"] == persona]
+            emoji = subset["persona_emoji"].iloc[0] if "persona_emoji" in subset.columns else ""
+            fig.add_trace(go.Box(
+                y=subset["valence"],
+                name=f"{emoji} {persona}",
+                marker_color=color,
+                line_color=color,
+                fillcolor="rgba({},{},{},0.15)".format(
+                    int(color[1:3],16), int(color[3:5],16), int(color[5:7],16)
+                ) if color.startswith("#") else color,
+                boxpoints="all",
+                jitter=0.4,
+                pointpos=0,
+                marker=dict(size=5, opacity=0.5, color=color),
+                customdata=subset[["track_name", "artist_name"]].values,
+                hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]}<br>Valence: %{y:.2f}<extra></extra>",
+            ))
+        fig.add_hline(y=0.5, line_dash="dot", line_color="#333",
+                      annotation_text="Neutral", annotation_font_color="#555")
+        fig.update_layout(
+            title="Valence Distribution by Persona",
+            yaxis_title="Valence (0 = dark, 1 = happy)",
+            yaxis=dict(range=[-0.05, 1.05]),
+            showlegend=False,
+            height=360,
+        )
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(
-        x=recent["added_at"],
-        y=recent["valence"],
-        mode="markers",
-        marker=dict(size=6, color="#555", opacity=0.6),
-        name="Raw valence",
-        hovertemplate="%{customdata[0]}<br>Valence: %{y:.2f}<extra></extra>",
-        customdata=recent[["track_name"]].values,
-    ))
-    fig.add_trace(go.Scatter(
-        x=recent["added_at"],
-        y=recent["valence_smooth"],
-        mode="lines",
-        line=dict(color="#FFD700", width=2.5),
-        name="Rolling avg (5 tracks)",
-    ))
-    fig.add_hline(y=0.5, line_dash="dot", line_color="#444",
-                  annotation_text="Neutral mood", annotation_font_color="#666")
     fig.update_layout(
-        title="Mood Over Time (valence from recently played)",
-        xaxis_title="Played at",
-        yaxis_title="Valence (0 = dark, 1 = happy)",
-        yaxis=dict(range=[0, 1]),
         template=PLOTLY_TEMPLATE,
         paper_bgcolor=BG_COLOR,
         plot_bgcolor="#111",
         legend=dict(bgcolor="#1A1A1A"),
-        height=360,
+        hoverlabel=dict(bgcolor="#1A1A1A", bordercolor="#2A2A2A", font_size=13),
     )
     return fig
 
@@ -372,24 +436,48 @@ def render_sidebar(df: pd.DataFrame) -> pd.DataFrame:
         format_func=lambda x: range_labels.get(x, x),
     )
 
-    # Genre filter
+    # Persona filter
+    personas = sorted(df["persona"].dropna().unique().tolist()) if "persona" in df.columns else []
+    persona_emojis = {}
+    if "persona_emoji" in df.columns:
+        persona_emojis = df.drop_duplicates("persona").set_index("persona")["persona_emoji"].to_dict()
+
+    selected_personas = st.sidebar.multiselect(
+        "Persona filter",
+        options=personas,
+        default=personas,
+        format_func=lambda p: f"{persona_emojis.get(p, '')} {p}",
+    )
+
+    # Genre filter — only show if we actually have genre data
     all_genres = set()
     for g in df["genres"].dropna():
         if g != "Unknown":
             all_genres.update([x.strip() for x in g.split(",")])
-    all_genres = sorted(all_genres)
 
-    selected_genres = st.sidebar.multiselect(
-        "Genres (filter tracks)",
-        options=all_genres,
-        default=[],
-        placeholder="All genres",
-    )
+    if all_genres:
+        all_genres = sorted(all_genres)
+        selected_genres = st.sidebar.multiselect(
+            "Genre filter",
+            options=all_genres,
+            default=[],
+            placeholder="All genres",
+        )
+    else:
+        selected_genres = []
+        st.sidebar.markdown(
+            "<span style='color:#444; font-size:0.72rem'>Genre filter unavailable<br>"
+            "(Spotify API restricted)</span>",
+            unsafe_allow_html=True,
+        )
 
+    # Stats in sidebar
     st.sidebar.markdown("---")
+    total_artists = df["artist_name"].nunique()
     st.sidebar.markdown(
-        "<span style='color:#555; font-size:0.75rem'>Data from Spotify API • "
-        "Clustered with KMeans k=5</span>",
+        f"<span style='color:#555; font-size:0.75rem'>"
+        f"{len(df):,} tracks · {total_artists} artists<br>"
+        f"Clustered with KMeans k=5</span>",
         unsafe_allow_html=True,
     )
 
@@ -397,6 +485,8 @@ def render_sidebar(df: pd.DataFrame) -> pd.DataFrame:
     filtered = df.copy()
     if selected_ranges:
         filtered = filtered[filtered["time_range"].isin(selected_ranges)]
+    if selected_personas and "persona" in filtered.columns:
+        filtered = filtered[filtered["persona"].isin(selected_personas)]
     if selected_genres:
         mask = filtered["genres"].apply(
             lambda g: any(genre in str(g) for genre in selected_genres)
@@ -416,12 +506,18 @@ def render_personality(df: pd.DataFrame):
     avg_energy = df["energy"].mean()
     avg_dance = df["danceability"].mean()
 
-    # Top genre
+    # Top genre — fall back to top artist if genres unavailable
     all_genres = []
     for g in df["genres"].dropna():
         if g != "Unknown":
             all_genres.extend([x.strip() for x in g.split(",")])
-    top_genre = pd.Series(all_genres).value_counts().idxmax() if all_genres else "Unknown"
+    if all_genres:
+        top_label_key = "Top Genre"
+        top_label_val = pd.Series(all_genres).value_counts().idxmax()
+    else:
+        top_label_key = "Top Artist"
+        top_label_val = df["artist_name"].value_counts().idxmax() if not df.empty else "—"
+    top_genre = top_label_val  # keep variable name for compat
 
     # Dominant persona
     dominant_persona = df["persona"].value_counts().idxmax() if "persona" in df.columns else "—"
@@ -440,7 +536,7 @@ def render_personality(df: pd.DataFrame):
     stat_card(c1, "Mood Score (Valence)", f"{avg_valence:.2f}")
     stat_card(c2, "Avg Energy", f"{avg_energy:.2f}")
     stat_card(c3, "Avg Danceability", f"{avg_dance:.2f}")
-    stat_card(c4, "Top Genre", top_genre[:18] + ("…" if len(top_genre) > 18 else ""))
+    stat_card(c4, top_label_key, top_genre[:18] + ("…" if len(str(top_genre)) > 18 else ""))
 
     # Persona card
     if persona_row is not None:
