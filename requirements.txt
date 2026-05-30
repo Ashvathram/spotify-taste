@@ -1,8 +1,7 @@
-spotipy
-pandas
-numpy
-scikit-learn
-umap-learn
-plotly
-streamlit
-python-dotenv
+streamlit>=1.35.0
+spotipy>=2.24.0
+pandas>=2.0.0
+numpy>=1.26.0
+scikit-learn>=1.4.0
+plotly>=5.20.0
+umap-learn>=0.5.6
