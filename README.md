@@ -1,6 +1,6 @@
 # 🎵 Spotify Music Taste Analyzer
 
-> Analyze your Spotify listening history to reveal your music personality — mood clusters, taste fingerprint, artist breakdown, and listening trends — displayed in an interactive Streamlit dashboard.
+> Analyzed my Spotify listening history to reveal my music personality i.e mood clusters, taste fingerprint, artist breakdown, and listening trends — displayed in an interactive Streamlit dashboard.
 
 ![Dashboard Preview](screenshots/01_personality.png)
 
@@ -8,10 +8,10 @@
 
 ## ✨ Features
 
-- **Pulls your top tracks** across short (4 weeks), medium (6 months), and long-term (years) from Spotify
+- **Pulls my top tracks** across short (4 weeks), medium (6 months), and long-term (years) from Spotify
 - **Last.fm enrichment** — fetches real genre tags for each track to improve audio feature accuracy
-- **KMeans clustering** — groups your music into 5 mood personas
-- **UMAP / PCA** — reduces your taste to a 2D map you can explore
+- **KMeans clustering** — grouped my music into 5 mood personas
+- **UMAP / PCA** — reduced my music taste to a 2D map you can explore
 - **Interactive Streamlit dashboard** — fully local, nothing uploaded anywhere
 
 ---
@@ -36,12 +36,12 @@ Stat cards for mood score, energy, danceability, and top artist. Dominant mood p
 ![Personality](screenshots/01_personality.png)
 
 ### 02 — Taste Space
-2D UMAP scatter of all your tracks colored by mood cluster. Hover for track name, artist, valence and energy.
+2D UMAP scatter of all my fav tracks colored by mood cluster. Hover for track name, artist, valence and energy.
 
 ![Taste Space](screenshots/02_taste_space.png)
 
 ### 03 — Audio Fingerprint
-Radar chart comparing your recent (4 weeks) vs all-time audio profile. Feature breakdown bars + taste shift deltas.
+Radar chart comparing my recent (4 weeks) vs all-time audio profile. Feature breakdown bars + taste shift deltas.
 
 ![Audio Fingerprint](screenshots/03_fingerprint.png)
 
